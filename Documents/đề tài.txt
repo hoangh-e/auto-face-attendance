@@ -1,0 +1,130 @@
+MÔ TẢ HỆ THỐNG CHẤM CÔNG AI VISION
+
+
+1.	Mục tiêu hệ thống:
+
+-	Tự động hóa 100%: Ghi nhận thời gian vào/ra của nhân viên một cách tự động, không cần tương tác.
+-	Độ chính xác cao: Giảm thiểu tối đa các trường hợp nhận dạng sai hoặc bỏ sót thông qua các thuật toán AI và logic nghiệp vụ thông minh.
+-	Trải nghiệm liền mạch: Tích hợp sâu với các công cụ làm việc hàng ngày (Slack, Teams) để cung cấp phản hồi tức thì và tạo sự tin tưởng.
+-	An toàn và Bảo mật: Đảm bảo an toàn dữ liệu nhân viên và quyền riêng tư thông qua kiến trúc self-hosted và các biện pháp chống giả mạo.
+-	Khả năng mở rộng: Sẵn sàng đáp ứng nhu cầu từ các văn phòng nhỏ đến các tập đoàn lớn với nhiều chi nhánh.
+
+2.	Kiến Trúc Kỹ Thuật Chi Tiết:
+
+Hệ thống được xây dựng trên kiến trúc Microservices và Event-Driven, đảm bảo các thành phần hoạt động độc lập, dễ dàng nâng cấp và thay thế.
+
+➢	Tầng Thu Thập Dữ Liệu (Data Ingestion Layer):
+○	Chức năng: Là đầu vào của hệ thống, chịu trách nhiệm kết nối và xử lý các luồng video (RTSP/RTMP) từ camera IP.
+○	Tối ưu hóa hiệu suất: sử dụng kiến trúc xử lý hai luồng (dual-stream). Nó liên tục phân tích luồng phụ (sub-stream) có độ phân giải thấp bằng các mô hình phát hiện đối tượng nhẹ (trên CPU hoặc Google Coral TPU). Chỉ khi phát hiện đối tượng person trong một "vùng quan tâm" (zone) được định nghĩa trước, nó mới kích hoạt xử lý trên luồng chính (main-stream) độ phân giải cao để lấy snapshot chất lượng tốt nhất.
+○	Đầu ra: Các sự kiện (bắt đầu, kết thúc, snapshot mới) và dữ liệu (ảnh snapshot) được chuẩn hóa và publish lên MQTT Broker. Điều này tách biệt hoàn toàn logic xử lý video khỏi logic nghiệp vụ.
+➢	Tầng Giao Tiếp Sự Kiện (Event Bus):
+○	Chức năng: Đóng vai trò là một bus truyền tin bất đồng bộ, đáng tin cậy. Nó nhận các sự kiện từ Frigate và phân phối chúng đến các "subscriber" quan tâm.
+○	Lợi ích: Kiến trúc này cho phép hệ thống xử lý các lượng yêu cầu đột biến (ví dụ: nhiều người vào cùng lúc) một cách mượt mà. Các sự kiện sẽ được xếp hàng và xử lý tuần tự hoặc song song bởi các worker, đảm bảo không có dữ liệu nào bị mất.
+➢	Tầng Xử Lý AI (AI Processing Layer):
+○	Chức năng: Một microservice chuyên biệt, chạy trên máy chủ GPU, cung cấp các API hiệu năng cao cho các tác vụ thị giác máy tính.
+○	API chính:
+■	POST /detect_and_embed: Nhận một ảnh, tự động phát hiện tất cả các khuôn mặt trong đó, và trả về một danh sách các vector embedding 512 chiều tương ứng.
+■	POST /check_liveness: (Tính năng nâng cao) Nhận một chuỗi khung hình ngắn hoặc một ảnh duy nhất, sử dụng mô hình anti-spoofing để xác định xem đó là khuôn mặt người thật hay là một hình ảnh giả mạo (ảnh in, màn hình điện thoại).
+○	Công nghệ: Sử dụng các mô hình SOTA (State-of-the-art) như SCRFD để phát hiện và ArcFace để tạo embedding, đảm bảo độ chính xác hàng đầu.
+➢	Tầng Logic Nghiệp Vụ (Business Logic Layer):
+○	Chức năng: Đây là bộ não điều khiển toàn bộ quy trình chấm công. Nó lắng nghe các sự kiện MQTT, điều phối các tác vụ và áp dụng các quy tắc của công ty.
+○	Quy trình xử lý:
+■	Nhận sự kiện: Lấy ảnh snapshot từ tin nhắn MQTT.
+■	Gọi AI Service: Gửi ảnh đến InsightFace Service để lấy embedding và kiểm tra liveness.
+■	Truy vấn DB: Dùng embedding để tìm kiếm nhân viên trong Supabase Vector DB.
+■	Áp dụng quy tắc:
+●	Ngưỡng tin cậy: Chỉ chấp nhận kết quả nếu độ tương đồng > 0.65.
+●	Logic Check-in/out: Xác định đây là lần vào đầu tiên hay lần ra cuối cùng trong ngày.
+●	Logic Cooldown: Bỏ qua các lần nhận dạng lặp lại trong một khoảng thời gian ngắn.
+■	Thực thi hành động: Ghi log chấm công vào Supabase và gửi thông báo qua API của Slack/Teams.
+➢	Tầng Dữ Liệu và Giao Diện (Data & Presentation Layer):
+○	PostgreSQL với pgvector: Hợp nhất lưu trữ dữ liệu quan hệ (tên, phòng ban) và dữ liệu vector (embedding khuôn mặt), cho phép các truy vấn phức tạp và hiệu quả.
+○	Storage: Lưu trữ an toàn các ảnh gốc dùng để đăng ký, phục vụ cho việc kiểm tra và huấn luyện lại mô hình sau này.
+○	Real-time: Tự động đẩy các bản ghi chấm công mới đến Dashboard của quản lý qua WebSockets, tạo ra một giao diện giám sát trực quan và tức thì.
+○	Giao diện người dùng (Web-based):
+■	Administrator Panel: Giao diện cho bộ phận Nhân sự để quản lý hồ sơ nhân viên, đăng ký khuôn mặt mới, xem và xuất báo cáo chấm công chi tiết.
+■	Real-time Dashboard: Giao diện cho quản lý cấp cao để theo dõi tình hình nhân sự tại văn phòng trong thời gian thực.
+
+3.	Các Tính Năng Nâng Cao:
+
+Để hệ thống trở nên mạnh mẽ và đáng tin cậy, các tính năng sau được tích hợp:
+
+➢	Chống Giả Mạo (Anti-Spoofing): Tích hợp mô hình phát hiện thực thể sống (Liveness Detection) để ngăn chặn các hành vi gian lận bằng ảnh hoặc video, đảm bảo chỉ người thật mới có thể chấm công.
+➢	Quản lý Vùng Linh Hoạt (Flexible Zone Management): Thông qua giao diện của Frigate, quản trị viên có thể dễ dàng vẽ các "vùng chấm công" ảo trên khung hình của camera. Hệ thống sẽ chỉ xử lý các sự kiện xảy ra bên trong các vùng này.
+➢	Cơ Chế Đồng Thuận và Minh Bạch: Trước khi đưa vào hệ thống, nhân viên sẽ được cung cấp thông tin đầy đủ về chính sách và ký vào một biểu mẫu đồng thuận điện tử. Hệ thống chỉ hoạt động trong giờ làm việc quy định.
+➢	Phương Án Dự Phòng (Fallback Mechanism): Nhân viên luôn có một phương án chấm công thủ công (ví dụ: một nút bấm "Check-in/out" trên ứng dụng nội bộ hoặc Slack) trong trường hợp hệ thống tự động gặp sự cố hoặc không nhận dạng được.
+➢	Hệ Thống Thông Báo Thông Minh:
+○	Thông báo thành công: Gửi tin nhắn xác nhận kèm thời gian.
+○	Thông báo lỗi: Nếu nhân viên báo cáo chấm công sai qua nút bấm trên Slack, hệ thống tự động tạo một ticket cho bộ phận Nhân sự.
+○	Thông báo cảnh báo: Gửi cảnh báo đến đội an ninh nếu phát hiện khuôn mặt lạ trong khu vực hạn chế hoặc ngoài giờ làm việc.
+
+4.	Sơ đồ mô tả hệ thống:
+
+
+ 
+
+
+5.	Case study:
+
+Case Study: Một buổi sáng tại công ty BHK
+
+Bối cảnh: Công ty BHK triển khai hệ thống này với một camera IP đặt tại lối vào chính của văn phòng.
+
+7:58 AM: Chị A, một nhân viên phòng Marketing, đi đến văn phòng. Chị không cần tìm máy chấm công, chỉ đơn giản đi thẳng vào khu vực làm việc của mình.
+Hệ thống hoạt động: phát hiện chị A, chụp một snapshot và gửi sự kiện lên MQTT. Logic Worker nhận được, gọi AI Service, và xác định danh tính của chị A với độ chính xác 98%. Worker kiểm tra và thấy đây là lần đầu tiên hệ thống thấy chị A trong ngày.
+Kết quả: Một bản ghi "Check-in" lúc 7:58 AM được tạo cho chị A. Gần như ngay lập tức, điện thoại của chị A nhận được thông báo trên Slack: 👋 Chào buổi sáng, A! Bạn đã check-in thành công vào lúc 07:58 AM.
+
+
+
+8:01 AM: Anh Tuấn và anh Long từ đội Kỹ thuật cùng nhau đi vào, vừa đi vừa trò chuyện.
+Hệ thống hoạt động: phát hiện và theo dõi hai người như hai đối tượng riêng biệt, tạo ra hai sự kiện gần như đồng thời. Logic Worker xử lý hai sự kiện này trên hai luồng song song. Cả hai đều được nhận dạng thành công.
+
+Kết quả: Anh Tuấn và anh Long lần lượt nhận được thông báo check-in trên Microsoft Teams, xác nhận thời gian vào làm của mình. Hệ thống xử lý mượt mà cả hai người mà không có sự chậm trễ.
+
+8:15 AM: Chị A đi từ bàn làm việc của mình ra khu vực pantry để lấy cà phê. Lối đi này cũng nằm trong tầm nhìn của camera.
+
+Hệ thống hoạt động: lại phát hiện chị A. Tuy nhiên, khi Logic Worker xử lý sự kiện này, nó kiểm tra và thấy rằng chị A đã có một bản ghi check-in cách đây chỉ 17 phút. Quy tắc "cooldown" (ví dụ: 30 phút) được áp dụng.
+Kết quả: Hệ thống bỏ qua sự kiện này và không tạo thêm bất kỳ bản ghi chấm công nào. Chị A không nhận được thông báo nào khác, tránh gây phiền nhiễu.
+
+8:20 AM: Một người giao hàng bước vào sảnh để gửi tài liệu.
+Hệ thống hoạt động: phát hiện người này và gửi sự kiện. Logic Worker xử lý và gọi AI Service. AI Service trả về một embedding, nhưng khi truy vấn vào cơ sở dữ liệu, không tìm thấy hồ sơ nào khớp.
+
+Kết quả: Hệ thống ghi nhận đây là một "người lạ" (Unknown) và không thực hiện hành động chấm công nào. Có thể cấu hình để gửi một cảnh báo đến bộ phận an ninh nếu cần.
+
+
+CÁC THÀNH PHẦN CẦN PHÁT TRIỂN CHO MPV VÀ CHI PHÍ ƯỚC TÍNH
+
+I.	Backend:
+-	Triển khai và thiết kế database, vectordb. Cấu hình RLS (Row-Level Security) cơ bản cho multi-tenancy.
+-	Xây dựng API Gateway: Thiết lập API để nhận webhook từ camera.
+-	Thiết lập Message Queue: Cài đặt một hàng đợi tin nhắn đơn giản (Redis hoặc RabbitMQ chạy trên cùng server) để làm bộ đệm.
+-	Thời gian triển khai: 4 tuần.
+
+
+II.	AI Core nhận dạng:
+
+-	Thiết lập AI Server
+-	Phát triển và đóng gói core nhận dạng khuôn mặt người. Viết API services dùng để nhận dạng và tạo embedding khuôn mặt.
+-	Viết Logic Worker: Tạo một worker Python để lấy dữ liệu từ Message Queue, gọi AI Core, truy vấn vectordb, và áp dụng logic chấm công cơ bản (ngưỡng, cooldown).
+-	Tích hợp thông báo: Viết hàm gọi API của Slack/Telegram để gửi thông báo.
+-	Thời gian triển khai: 4 tuần.
+
+III.	Admin Panel:
+
+-	Xây dựng admin panel cơ bản: Nextjs, Nodejs ….
+-	Các chức năng cần có: 
++	Đăng nhập.
++	Trang để thêm/xem danh sách nhân viên.
++	Form để tải ảnh lên và thực hiện quá trình đăng ký khuôn mặt.
++	Trang đơn giản để xem lịch sử chấm công.
+-	Thời gian triển khai: 3 tuần.
+
+IV.	Tích hợp camera và triển khai thực tế:
+
+-	Mua và cấu hình camera mẫu: cách cấu hình webhook để camera gửi snapshot đến API Gateway đã tạo.
+-	Triển khai và kiểm thử End-to-End: Kết nối tất cả các thành phần lại với nhau và chạy thử nghiệm trong môi trường thực tế.
+-	Đóng gói: Chuẩn bị các script để tự động hóa việc triển khai (ví dụ: Docker Compose, systemd services).
+-	Thời gian dự kiến: 2 tuần.
+
+
+
