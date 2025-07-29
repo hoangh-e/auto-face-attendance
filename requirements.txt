@@ -1,1 +1,14 @@
- 
+onnxruntime
+insightface 
+torch
+torchvision
+opencv-python
+scikit-learn
+matplotlib
+pandas
+tqdm
+pillow
+plotly
+psutil
+numpy
+requests
