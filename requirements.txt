@@ -1,45 +1,14 @@
-# AI Attendance System Dependencies
-# Core ML/AI packages
-torch>=2.0.0
-torchvision>=0.15.0
-insightface>=0.7.3
-onnx>=1.14.0
-onnxruntime>=1.15.0
-
-# Computer Vision
-opencv-python>=4.8.0
-pillow>=10.0.0
-
-# Data Science
-numpy>=1.24.0
-pandas>=2.0.0
-scikit-learn>=1.3.0
-
-# Database
-sqlite3  # Built-in with Python
-
-# Visualization
-matplotlib>=3.7.0
-plotly>=5.15.0
-tqdm>=4.65.0
-
-# System monitoring
-psutil>=5.9.0
-
-# Utilities
-pathlib  # Built-in with Python
-typing  # Built-in with Python
-datetime  # Built-in with Python
-threading  # Built-in with Python
-queue  # Built-in with Python
-logging  # Built-in with Python
-
-# For CPU-only installations, use:
-# torch>=2.0.0+cpu
-# torchvision>=0.15.0+cpu
-# --index-url https://download.pytorch.org/whl/cpu
-
-# For CUDA installations, use:
-# torch>=2.0.0+cu118
-# torchvision>=0.15.0+cu118
-# --index-url https://download.pytorch.org/whl/cu118
+onnxruntime
+insightface 
+torch
+torchvision
+opencv-python
+scikit-learn
+matplotlib
+pandas
+tqdm
+pillow
+plotly
+psutil
+numpy
+requests
